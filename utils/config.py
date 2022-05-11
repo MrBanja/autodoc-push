@@ -5,6 +5,24 @@ import yaml
 from pydantic import BaseModel, SecretStr
 
 
+class DataBaseConfig(BaseModel):
+    host: str
+    username: str
+    password: SecretStr
+    port: int
+    database: str
+
+    def uri(self, protocol: str = 'postgresql+asyncpg') -> str:
+        return "{protocol}://{user}:{pwd}@{host}:{port}/{db}".format(
+            protocol=protocol,
+            user=self.username,
+            pwd=self.password.get_secret_value(),
+            host=self.host,
+            port=self.port,
+            db=self.database,
+        )
+
+
 class RabbitMQConfig(BaseModel):
     host: str
     username: str
@@ -18,6 +36,7 @@ class TelegramConfig(BaseModel):
 
 class AppConfig(BaseModel):
     telegram: TelegramConfig
+    db: DataBaseConfig
     rmq: RabbitMQConfig
 
     project_dir: pathlib.Path
