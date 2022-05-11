@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from typing import Optional
 
 import aio_pika
@@ -6,7 +7,8 @@ import ujson
 from loguru import logger
 from pydantic import ValidationError
 
-from app.models import BasicPush
+from app.models import BasicPush, CellMessage
+from database.models import Cell, Order, User, OrderStatus
 from utils.config import AppConfig
 
 log = logger
@@ -56,11 +58,35 @@ class RabbitProcessor:
                 return
             try:
                 push = BasicPush.parse_obj(message_body)
+                if push.is_cell_message:
+                    push = CellMessage.parse_obj(message_body)
+                self.log.info(f'Received {push=}')
             except ValidationError as e:
                 self.log.error(f'Can not Validate: [{e.errors()}]')
                 return
 
+            if push.is_cell_message:
+                await self.process_cell_push(push)
+                return
             await self.process_push(push)
 
     async def process_push(self, push: BasicPush):
         await self._sender_function(push.telegram_user_id, push.message)
+
+    async def process_cell_push(self, push: CellMessage):
+        cell: Cell = await Cell.get(id=push.cell_id)
+        order: Order = await Order.get(id=cell.order_id)
+        receiver: User = await User.get(id=order.receiver_id)
+        sender: User = await User.get(id=order.sender_id)
+
+        next_status = OrderStatus.READY if push.is_sending else OrderStatus.DONE
+        if not push.is_sending:
+            await cell.update(order_id=None, is_open=True)
+            await order.update(
+                status_id=next_status,
+                status_changed_at=datetime.now(),
+            )
+
+        message = f'Статус заявки №{order.id} изменен на {OrderStatus.get_str_by_id(next_status)}'
+        await self._sender_function(receiver.telegram_id, message)
+        await self._sender_function(sender.telegram_id, message)
