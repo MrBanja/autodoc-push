@@ -82,10 +82,10 @@ class RabbitProcessor:
         next_status = OrderStatus.READY if push.is_sending else OrderStatus.DONE
         if not push.is_sending:
             await cell.update(order_id=None, is_open=True)
-            await order.update(
-                status_id=next_status,
-                status_changed_at=datetime.now(),
-            )
+        await order.update(
+            status_id=next_status,
+            status_changed_at=datetime.now(),
+        )
 
         message = f'Статус заявки №{order.id} изменен на {OrderStatus.get_str_by_id(next_status)}'
         await self._sender_function(receiver.telegram_id, message)
